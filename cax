@@ -9,6 +9,16 @@ profiles_root="${CAX_PROFILES_HOME:-$HOME/.codex-accounts}"
 shared_state_home="${CAX_SHARED_STATE_HOME:-$HOME/.codex}"
 credentials_override='cli_auth_credentials_store="file"'
 
+color_enabled=0
+if [[ "${CAX_COLOR:-auto}" == "always" ]] ||
+    [[ "${CAX_COLOR:-auto}" == "auto" && -t 1 && -z "${NO_COLOR:-}" ]]; then
+    color_enabled=1
+fi
+color_reset=$'\033[0m'
+color_red=$'\033[31m'
+color_green=$'\033[32m'
+color_yellow=$'\033[33m'
+
 pause_launcher_on_error() {
     if [[ "${CODEX_SWITCH_LAUNCHER:-0}" == "1" && -t 0 ]]; then
         printf '\nPressione Enter para fechar...'
@@ -84,11 +94,81 @@ profile_is_logged_in() {
     run_profile login status >/dev/null 2>&1
 }
 
+format_reset_time() {
+    local resets_at="$1" now remaining total_minutes days hours minutes
+    now="$(date +%s)"
+    remaining=$((resets_at - now))
+    (( remaining > 0 )) || {
+        printf 'agora\n'
+        return
+    }
+
+    total_minutes=$(((remaining + 59) / 60))
+    days=$((total_minutes / 1440))
+    hours=$(((total_minutes % 1440) / 60))
+    minutes=$((total_minutes % 60))
+
+    if (( days > 0 )); then
+        printf '%dd%dh\n' "$days" "$hours"
+    elif (( hours > 0 )); then
+        printf '%dh%02dm\n' "$hours" "$minutes"
+    else
+        printf '%dm\n' "$minutes"
+    fi
+}
+
+paint() {
+    local color="$1" text="$2"
+    if (( color_enabled )); then
+        printf '%s%s%s' "$color" "$text" "$color_reset"
+    else
+        printf '%s' "$text"
+    fi
+}
+
+print_usage_field() {
+    local percent="$1" reset_time="$2" seconds="$3" window="$4" width="$5"
+    local time_color="$color_reset"
+    local visible padding
+
+    if [[ "$percent" =~ ^([0-9]+)%$ ]]; then
+        if (( window == 300 )); then
+            if (( seconds <= 3600 )); then
+                time_color="$color_green"
+            elif (( seconds <= 10800 )); then
+                time_color="$color_yellow"
+            else
+                time_color="$color_red"
+            fi
+        else
+            if (( seconds <= 86400 )); then
+                time_color="$color_green"
+            elif (( seconds <= 259200 )); then
+                time_color="$color_yellow"
+            else
+                time_color="$color_red"
+            fi
+        fi
+
+        visible="$percent ($reset_time)"
+        printf '%s ' "$percent"
+        paint "$time_color" "($reset_time)"
+    else
+        visible="$percent"
+        printf '%s' "$percent"
+    fi
+
+    padding=$((width - ${#visible}))
+    (( padding > 0 )) && printf '%*s' "$padding" ''
+}
+
 profile_usage_limits() {
     local account_home="$1"
     local response="" server_pid read_fd write_fd
-    local primary secondary primary_used primary_minutes
-    local secondary_used secondary_minutes five_hour="--" weekly="--"
+    local primary secondary primary_used primary_minutes primary_reset
+    local secondary_used secondary_minutes secondary_reset now
+    local five_hour="--" five_reset="--" five_seconds=0
+    local weekly="--" week_reset="--" week_seconds=0
 
     coproc CAX_USAGE_SERVER {
         CODEX_HOME="$account_home" CODEX_SQLITE_HOME="$shared_state_home" \
@@ -99,7 +179,7 @@ profile_usage_limits() {
     write_fd="${CAX_USAGE_SERVER[1]}"
 
     printf '%s\n' \
-        '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"cax","version":"1.1.0"},"capabilities":{"experimentalApi":true}}}' \
+        '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"cax","version":"1.2.0"},"capabilities":{"experimentalApi":true}}}' \
         '{"method":"initialized"}' \
         '{"id":2,"method":"account/rateLimits/read","params":{"excludeResetCreditDetails":true}}' \
         >&"$write_fd"
@@ -127,23 +207,41 @@ profile_usage_limits() {
     primary_used="${BASH_REMATCH[1]}"
     [[ "$primary" =~ \"windowDurationMins\":([0-9]+) ]] || return 1
     primary_minutes="${BASH_REMATCH[1]}"
+    [[ "$primary" =~ \"resetsAt\":([0-9]+) ]] || return 1
+    primary_reset="${BASH_REMATCH[1]}"
     [[ "$secondary" =~ \"usedPercent\":([0-9]+) ]] || return 1
     secondary_used="${BASH_REMATCH[1]}"
     [[ "$secondary" =~ \"windowDurationMins\":([0-9]+) ]] || return 1
     secondary_minutes="${BASH_REMATCH[1]}"
+    [[ "$secondary" =~ \"resetsAt\":([0-9]+) ]] || return 1
+    secondary_reset="${BASH_REMATCH[1]}"
+
+    now="$(date +%s)"
 
     if (( primary_minutes == 300 )); then
         five_hour="$((100 - primary_used))%"
+        five_reset="$(format_reset_time "$primary_reset")"
+        five_seconds=$((primary_reset - now))
     elif (( primary_minutes == 10080 )); then
         weekly="$((100 - primary_used))%"
+        week_reset="$(format_reset_time "$primary_reset")"
+        week_seconds=$((primary_reset - now))
     fi
     if (( secondary_minutes == 300 )); then
         five_hour="$((100 - secondary_used))%"
+        five_reset="$(format_reset_time "$secondary_reset")"
+        five_seconds=$((secondary_reset - now))
     elif (( secondary_minutes == 10080 )); then
         weekly="$((100 - secondary_used))%"
+        week_reset="$(format_reset_time "$secondary_reset")"
+        week_seconds=$((secondary_reset - now))
     fi
 
-    printf '%s %s\n' "$five_hour" "$weekly"
+    (( five_seconds >= 0 )) || five_seconds=0
+    (( week_seconds >= 0 )) || week_seconds=0
+    printf '%s %s %s %s %s %s\n' \
+        "$five_hour" "$five_reset" "$five_seconds" \
+        "$weekly" "$week_reset" "$week_seconds"
 }
 
 list_profiles() {
@@ -152,27 +250,58 @@ list_profiles() {
         return
     fi
 
-    local directory name state limits five_hour weekly
-    printf '%-7s %-13s %-8s %-8s\n' 'conta' 'status' '5h' 'semana'
+    local directory name state five_hour five_reset five_seconds
+    local weekly week_reset week_seconds usage_dir
+    local -a states=() usage_pids=()
+
+    umask 077
+    usage_dir="$(mktemp -d "${TMPDIR:-/tmp}/cax-usage.XXXXXX")" ||
+        fail "nao foi possivel criar o diretorio temporario da consulta."
+
+    # Descobre os logins primeiro e consulta todas as contas conectadas em paralelo.
     for name in {1..10}; do
         directory="$profiles_root/$name"
         [[ -d "$directory" ]] || continue
         profile="$name"
         profile_home="$directory"
-        state="desconectado"
-        five_hour="--"
-        weekly="--"
+        states[$name]="desconectado"
         if profile_is_logged_in; then
-            state="conectado"
-            if limits="$(profile_usage_limits "$directory")"; then
-                read -r five_hour weekly <<< "$limits"
+            states[$name]="conectado"
+            profile_usage_limits "$directory" > "$usage_dir/$name" &
+            usage_pids[$name]=$!
+        fi
+    done
+
+    printf '%-7s %-13s %-22s %-22s\n' \
+        'conta' 'status' '5h restante' 'semana restante'
+
+    for name in {1..10}; do
+        [[ -n "${states[$name]:-}" ]] || continue
+        state="${states[$name]}"
+        five_hour="--"
+        five_reset="--"
+        five_seconds=0
+        weekly="--"
+        week_reset="--"
+        week_seconds=0
+        if [[ "$state" == "conectado" ]]; then
+            if wait "${usage_pids[$name]}" &&
+                read -r five_hour five_reset five_seconds weekly week_reset week_seconds \
+                    < "$usage_dir/$name"; then
+                :
             else
                 five_hour="indisp."
                 weekly="indisp."
             fi
         fi
-        printf '%-7s %-13s %-8s %-8s\n' "$name" "$state" "$five_hour" "$weekly"
+        printf '%-7s %-13s ' "$name" "$state"
+        print_usage_field "$five_hour" "$five_reset" "$five_seconds" 300 22
+        print_usage_field "$weekly" "$week_reset" "$week_seconds" 10080 22
+        printf '\n'
     done
+
+    rm -f -- "$usage_dir"/{1..10}
+    rmdir -- "$usage_dir"
 }
 
 if (( $# == 0 )); then

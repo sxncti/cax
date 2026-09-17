@@ -58,7 +58,9 @@ Se o navegador insistir em usar a conta errada, faça login por código e abra o
 cax 2 login --device-auth
 ```
 
-Os limites exibidos por `cax list` são os mesmos consultados pelo `/status` do Codex. A consulta não envia uma mensagem nem consome o limite. Se o serviço estiver temporariamente inacessível, o CAX mostra `indisp.` sem considerar a conta desconectada.
+Os limites exibidos por `cax list` são os mesmos consultados pelo `/status` do Codex. Cada percentual vem acompanhado do tempo restante até o reset, como `70% (2h14m)` ou `95% (4d3h)`. A consulta não envia uma mensagem nem consome o limite. Se o serviço estiver temporariamente inacessível, o CAX mostra `indisp.` sem considerar a conta desconectada.
+
+Em terminais compatíveis, o CAX colore somente a contagem regressiva para destacar a proximidade do reset. Defina `NO_COLOR=1` ou `CAX_COLOR=never` para desativar as cores; use `CAX_COLOR=always` para mantê-las mesmo quando a saída for redirecionada.
 
 ## Como funciona
 
