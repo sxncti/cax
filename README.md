@@ -2,7 +2,7 @@
 
 Atalho para trocar rapidamente a conta padrão do Codex e manter até dez contas do Codex CLI abertas simultaneamente.
 
-Cada conta numerada usa um `CODEX_HOME` próprio. Isso separa credenciais, configurações, logs e sessões, sem precisar fazer logout de uma conta para abrir outra.
+Cada conta numerada usa um `CODEX_HOME` próprio para manter as credenciais separadas. O estado retomável do Codex fica no diretório padrão `~/.codex`, compartilhado entre os perfis, para que `/resume` mostre as mesmas conversas em `cax 1`, `cax 2` e no Codex padrão.
 
 ## Requisitos
 
@@ -73,7 +73,15 @@ Os perfis ficam separados em:
 
 O CAX define `CODEX_HOME` para o diretório da conta selecionada e força `cli_auth_credentials_store = "file"`. Assim, cada perfil mantém seu próprio `auth.json`.
 
-A variável `CODEX_HOME` é oficialmente suportada pelo Codex para definir a raiz de configurações, autenticação, logs, sessões e skills. Consulte a documentação de [variáveis de ambiente](https://learn.chatgpt.com/docs/config-file/environment-variables) e [autenticação](https://learn.chatgpt.com/docs/auth).
+Ao mesmo tempo, ele define `CODEX_SQLITE_HOME=~/.codex`. Esse diretório contém o índice e outros estados retomáveis usados pelo `/resume`, mas a credencial continua sendo lida do `CODEX_HOME` de cada conta. As transcrições podem continuar fisicamente dentro do perfil que as criou; o índice compartilhado guarda o caminho delas.
+
+Para usar outro local para o estado compartilhado, defina `CAX_SHARED_STATE_HOME`:
+
+```bash
+CAX_SHARED_STATE_HOME=/outro/diretorio cax 2
+```
+
+As variáveis `CODEX_HOME` e `CODEX_SQLITE_HOME` são oficialmente suportadas pelo Codex. Consulte a documentação de [variáveis de ambiente](https://learn.chatgpt.com/docs/config-file/environment-variables) e [autenticação](https://learn.chatgpt.com/docs/auth).
 
 ## Segurança
 
@@ -94,4 +102,4 @@ rm ~/.local/bin/cax
 rm ~/.local/share/applications/cax.desktop
 ```
 
-Os perfis e logins permanecem em `~/.codex-accounts`. Apague esse diretório somente se também quiser remover todas as credenciais e sessões do CAX.
+Os perfis e logins permanecem em `~/.codex-accounts`. Apague esse diretório somente se também quiser remover todas as credenciais e transcrições armazenadas nos perfis. O estado compartilhado padrão permanece em `~/.codex`.

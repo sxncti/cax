@@ -6,6 +6,7 @@ set -u
 
 codex_command="${CODEX_COMMAND:-codex}"
 profiles_root="${CAX_PROFILES_HOME:-$HOME/.codex-accounts}"
+shared_state_home="${CAX_SHARED_STATE_HOME:-$HOME/.codex}"
 credentials_override='cli_auth_credentials_store="file"'
 
 pause_launcher_on_error() {
@@ -65,8 +66,9 @@ validate_profile() {
 prepare_profile() {
     profile_home="$profiles_root/$profile"
     umask 077
-    mkdir -p "$profile_home" || fail "nao foi possivel criar $profile_home."
-    chmod 700 "$profiles_root" "$profile_home" 2>/dev/null || true
+    mkdir -p "$profile_home" "$shared_state_home" ||
+        fail "nao foi possivel preparar os diretorios do perfil $profile."
+    chmod 700 "$profiles_root" "$profile_home" "$shared_state_home" 2>/dev/null || true
     if [[ ! -e "$profile_home/config.toml" ]]; then
         printf 'cli_auth_credentials_store = "file"\n' > "$profile_home/config.toml" ||
             fail "nao foi possivel configurar o perfil $profile."
@@ -74,7 +76,8 @@ prepare_profile() {
 }
 
 run_profile() {
-    CODEX_HOME="$profile_home" "$codex_command" -c "$credentials_override" "$@"
+    CODEX_HOME="$profile_home" CODEX_SQLITE_HOME="$shared_state_home" \
+        "$codex_command" -c "$credentials_override" "$@"
 }
 
 profile_is_logged_in() {
@@ -143,7 +146,7 @@ case "${1:-}" in
             printf 'Primeiro acesso ao perfil "%s". Abrindo o login no navegador...\n\n' "$profile"
             run_profile login || fail "o login do perfil $profile nao foi concluido."
         fi
-        exec env CODEX_HOME="$profile_home" \
+        exec env CODEX_HOME="$profile_home" CODEX_SQLITE_HOME="$shared_state_home" \
             "$codex_command" -c "$credentials_override" "$@"
         ;;
 esac
