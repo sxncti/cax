@@ -129,9 +129,22 @@ paint() {
 print_usage_field() {
     local percent="$1" reset_time="$2" seconds="$3" window="$4" width="$5"
     local time_color="$color_reset"
-    local visible padding
+    local visible padding meter="["
+    local percent_value filled segment
 
     if [[ "$percent" =~ ^([0-9]+)%$ ]]; then
+        percent_value="${BASH_REMATCH[1]}"
+        filled=$(((percent_value + 19) / 20))
+        (( filled <= 5 )) || filled=5
+        for segment in {1..5}; do
+            if (( segment <= filled )); then
+                meter+="■"
+            else
+                meter+="□"
+            fi
+        done
+        meter+="]"
+
         if (( window == 300 )); then
             if (( seconds <= 3600 )); then
                 time_color="$color_green"
@@ -150,8 +163,8 @@ print_usage_field() {
             fi
         fi
 
-        visible="$percent ($reset_time)"
-        printf '%s ' "$percent"
+        visible="$percent $meter ($reset_time)"
+        printf '%s %s ' "$percent" "$meter"
         paint "$time_color" "($reset_time)"
     else
         visible="$percent"
@@ -164,7 +177,8 @@ print_usage_field() {
 
 profile_usage_limits() {
     local account_home="$1"
-    local response="" server_pid read_fd write_fd
+    local response="" account_response="" usage_response=""
+    local server_pid read_fd write_fd email="--"
     local primary secondary primary_used primary_minutes primary_reset
     local secondary_used secondary_minutes secondary_reset now
     local five_hour="--" five_reset="--" five_seconds=0
@@ -179,14 +193,19 @@ profile_usage_limits() {
     write_fd="${CAX_USAGE_SERVER[1]}"
 
     printf '%s\n' \
-        '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"cax","version":"1.2.0"},"capabilities":{"experimentalApi":true}}}' \
+        '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"cax","version":"1.3.0"},"capabilities":{"experimentalApi":true}}}' \
         '{"method":"initialized"}' \
-        '{"id":2,"method":"account/rateLimits/read","params":{"excludeResetCreditDetails":true}}' \
+        '{"id":2,"method":"account/read","params":{"refreshToken":false}}' \
+        '{"id":3,"method":"account/rateLimits/read","params":{"excludeResetCreditDetails":true}}' \
         >&"$write_fd"
 
     while IFS= read -r -t 8 -u "$read_fd" response; do
-        [[ "$response" == *'"id":2,"result":'* ]] && break
-        response=""
+        if [[ "$response" == *'"id":2,"result":'* ]]; then
+            account_response="$response"
+        elif [[ "$response" == *'"id":3,"result":'* ]]; then
+            usage_response="$response"
+        fi
+        [[ -n "$account_response" && -n "$usage_response" ]] && break
     done
 
     exec {write_fd}>&-
@@ -194,13 +213,17 @@ profile_usage_limits() {
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
 
-    [[ "$response" == *'"id":2,"result":'* ]] || return 1
+    [[ -n "$usage_response" ]] || return 1
+    if [[ "$account_response" =~ \"email\":\"([^\"]+)\" ]]; then
+        email="${BASH_REMATCH[1]}"
+        email="${email%%@*}"
+    fi
 
-    primary="${response#*\"primary\":}"
-    [[ "$primary" != "$response" ]] || return 1
+    primary="${usage_response#*\"primary\":}"
+    [[ "$primary" != "$usage_response" ]] || return 1
     primary="${primary%%,\"secondary\":*}"
-    secondary="${response#*\"secondary\":}"
-    [[ "$secondary" != "$response" ]] || return 1
+    secondary="${usage_response#*\"secondary\":}"
+    [[ "$secondary" != "$usage_response" ]] || return 1
     secondary="${secondary%%,\"credits\":*}"
 
     [[ "$primary" =~ \"usedPercent\":([0-9]+) ]] || return 1
@@ -239,8 +262,8 @@ profile_usage_limits() {
 
     (( five_seconds >= 0 )) || five_seconds=0
     (( week_seconds >= 0 )) || week_seconds=0
-    printf '%s %s %s %s %s %s\n' \
-        "$five_hour" "$five_reset" "$five_seconds" \
+    printf '%s %s %s %s %s %s %s\n' \
+        "$email" "$five_hour" "$five_reset" "$five_seconds" \
         "$weekly" "$week_reset" "$week_seconds"
 }
 
@@ -250,9 +273,11 @@ list_profiles() {
         return
     fi
 
-    local directory name state five_hour five_reset five_seconds
-    local weekly week_reset week_seconds usage_dir
-    local -a states=() usage_pids=()
+    local directory name state email five_hour five_reset five_seconds
+    local weekly week_reset week_seconds usage_dir email_width=12
+    local -a states=() usage_pids=() emails=()
+    local -a five_hours=() five_resets=() five_seconds_all=()
+    local -a weeklies=() week_resets=() week_seconds_all=()
 
     umask 077
     usage_dir="$(mktemp -d "${TMPDIR:-/tmp}/cax-usage.XXXXXX")" ||
@@ -272,12 +297,11 @@ list_profiles() {
         fi
     done
 
-    printf '%-7s %-13s %-22s %-22s\n' \
-        'conta' 'status' '5h restante' 'semana restante'
-
+    # Aguarda os processos paralelos e guarda os resultados antes de formatar a tabela.
     for name in {1..10}; do
         [[ -n "${states[$name]:-}" ]] || continue
         state="${states[$name]}"
+        email="--"
         five_hour="--"
         five_reset="--"
         five_seconds=0
@@ -286,7 +310,7 @@ list_profiles() {
         week_seconds=0
         if [[ "$state" == "conectado" ]]; then
             if wait "${usage_pids[$name]}" &&
-                read -r five_hour five_reset five_seconds weekly week_reset week_seconds \
+                read -r email five_hour five_reset five_seconds weekly week_reset week_seconds \
                     < "$usage_dir/$name"; then
                 :
             else
@@ -294,9 +318,27 @@ list_profiles() {
                 weekly="indisp."
             fi
         fi
-        printf '%-7s %-13s ' "$name" "$state"
-        print_usage_field "$five_hour" "$five_reset" "$five_seconds" 300 22
-        print_usage_field "$weekly" "$week_reset" "$week_seconds" 10080 22
+        emails[$name]="$email"
+        five_hours[$name]="$five_hour"
+        five_resets[$name]="$five_reset"
+        five_seconds_all[$name]="$five_seconds"
+        weeklies[$name]="$weekly"
+        week_resets[$name]="$week_reset"
+        week_seconds_all[$name]="$week_seconds"
+        (( ${#email} > email_width )) && email_width=${#email}
+    done
+
+    printf '%-6s %-*s %-12s %-25s %-25s\n' \
+        'conta' "$email_width" 'email' 'status' '5h restante' 'semana restante'
+
+    for name in {1..10}; do
+        [[ -n "${states[$name]:-}" ]] || continue
+        printf '%-6s %-*s %-12s ' \
+            "$name" "$email_width" "${emails[$name]}" "${states[$name]}"
+        print_usage_field \
+            "${five_hours[$name]}" "${five_resets[$name]}" "${five_seconds_all[$name]}" 300 25
+        print_usage_field \
+            "${weeklies[$name]}" "${week_resets[$name]}" "${week_seconds_all[$name]}" 10080 25
         printf '\n'
     done
 
