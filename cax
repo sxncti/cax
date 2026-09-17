@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -u
+
+# CAX = Codex Account eXchange.
+# Sem argumentos, troca a conta padrao. Com 1 a 10, abre uma conta isolada.
+
+codex_command="${CODEX_COMMAND:-codex}"
+profiles_root="${CAX_PROFILES_HOME:-$HOME/.codex-accounts}"
+credentials_override='cli_auth_credentials_store="file"'
+
+pause_launcher_on_error() {
+    if [[ "${CODEX_SWITCH_LAUNCHER:-0}" == "1" && -t 0 ]]; then
+        printf '\nPressione Enter para fechar...'
+        read -r _
+    fi
+}
+
+fail() {
+    printf 'Erro: %s\n' "$1" >&2
+    pause_launcher_on_error
+    exit "${2:-1}"
+}
+
+usage() {
+    cat <<'EOF'
+CAX — Codex Account eXchange
+
+Uso:
+  cax                         troca a conta padrao do Codex
+  cax NUMERO                  abre a conta isolada (1 a 10)
+  cax NUMERO login           entra ou troca essa conta
+  cax NUMERO logout          sai somente dessa conta
+  cax NUMERO status          mostra se a conta esta conectada
+  cax NUMERO switch          logout + login somente nessa conta
+  cax list                   lista as 10 contas
+
+Exemplo simultaneo, em dois terminais:
+  cax 1
+  cax 2
+
+Para escolher a conta manualmente pelo codigo do navegador:
+  cax 2 login --device-auth
+EOF
+}
+
+if ! command -v "$codex_command" >/dev/null 2>&1; then
+    fail "o comando Codex nao foi encontrado." 127
+fi
+
+switch_default() {
+    printf 'Trocando a conta padrao do Codex...\n'
+    if "$codex_command" login status >/dev/null 2>&1; then
+        "$codex_command" logout || fail "nao foi possivel remover a sessao atual."
+    fi
+    printf '\nAbrindo o navegador para entrar em outra conta...\n'
+    "$codex_command" login || fail "o login nao foi concluido. Rode cax para tentar novamente."
+    printf '\nPronto: a nova conta esta conectada ao Codex.\n'
+}
+
+validate_profile() {
+    [[ "$1" =~ ^([1-9]|10)$ ]] ||
+        fail "conta invalida. Use um numero de 1 a 10."
+}
+
+prepare_profile() {
+    profile_home="$profiles_root/$profile"
+    umask 077
+    mkdir -p "$profile_home" || fail "nao foi possivel criar $profile_home."
+    chmod 700 "$profiles_root" "$profile_home" 2>/dev/null || true
+    if [[ ! -e "$profile_home/config.toml" ]]; then
+        printf 'cli_auth_credentials_store = "file"\n' > "$profile_home/config.toml" ||
+            fail "nao foi possivel configurar o perfil $profile."
+    fi
+}
+
+run_profile() {
+    CODEX_HOME="$profile_home" "$codex_command" -c "$credentials_override" "$@"
+}
+
+profile_is_logged_in() {
+    run_profile login status >/dev/null 2>&1
+}
+
+list_profiles() {
+    if [[ ! -d "$profiles_root" ]]; then
+        printf 'As contas ainda nao foram criadas.\n'
+        return
+    fi
+
+    local directory name state
+    for name in {1..10}; do
+        directory="$profiles_root/$name"
+        [[ -d "$directory" ]] || continue
+        profile="$name"
+        profile_home="$directory"
+        state="desconectado"
+        profile_is_logged_in && state="conectado"
+        printf '%-20s %s\n' "$name" "$state"
+    done
+}
+
+if (( $# == 0 )); then
+    switch_default
+    exit 0
+fi
+
+case "$1" in
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    list|ls)
+        list_profiles
+        exit 0
+        ;;
+esac
+
+profile="$1"
+shift
+validate_profile "$profile"
+prepare_profile
+
+case "${1:-}" in
+    login)
+        shift
+        run_profile login "$@"
+        ;;
+    logout)
+        shift
+        run_profile logout "$@"
+        ;;
+    status)
+        shift
+        run_profile login status "$@"
+        ;;
+    switch)
+        shift
+        profile_is_logged_in && run_profile logout
+        run_profile login "$@"
+        ;;
+    *)
+        if ! profile_is_logged_in; then
+            printf 'Primeiro acesso ao perfil "%s". Abrindo o login no navegador...\n\n' "$profile"
+            run_profile login || fail "o login do perfil $profile nao foi concluido."
+        fi
+        exec env CODEX_HOME="$profile_home" \
+            "$codex_command" -c "$credentials_override" "$@"
+        ;;
+esac

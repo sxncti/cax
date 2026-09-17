@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=CAX — Trocar conta do Codex
+Comment=Trocar a conta padrão do Codex pelo navegador
+Exec=env CODEX_SWITCH_LAUNCHER=1 cax
+Icon=system-switch-user
+Terminal=true
+Categories=Development;
+Keywords=CAX;Codex;OpenAI;conta;login;logout;
+StartupNotify=false
