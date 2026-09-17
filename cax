@@ -33,7 +33,7 @@ Uso:
   cax NUMERO logout          sai somente dessa conta
   cax NUMERO status          mostra se a conta esta conectada
   cax NUMERO switch          logout + login somente nessa conta
-  cax list                   lista as 10 contas
+  cax list                   lista as contas e os limites restantes
 
 Exemplo simultaneo, em dois terminais:
   cax 1
@@ -84,21 +84,94 @@ profile_is_logged_in() {
     run_profile login status >/dev/null 2>&1
 }
 
+profile_usage_limits() {
+    local account_home="$1"
+    local response="" server_pid read_fd write_fd
+    local primary secondary primary_used primary_minutes
+    local secondary_used secondary_minutes five_hour="--" weekly="--"
+
+    coproc CAX_USAGE_SERVER {
+        CODEX_HOME="$account_home" CODEX_SQLITE_HOME="$shared_state_home" \
+            "$codex_command" -c "$credentials_override" app-server --stdio 2>/dev/null
+    }
+    server_pid="$CAX_USAGE_SERVER_PID"
+    read_fd="${CAX_USAGE_SERVER[0]}"
+    write_fd="${CAX_USAGE_SERVER[1]}"
+
+    printf '%s\n' \
+        '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"cax","version":"1.1.0"},"capabilities":{"experimentalApi":true}}}' \
+        '{"method":"initialized"}' \
+        '{"id":2,"method":"account/rateLimits/read","params":{"excludeResetCreditDetails":true}}' \
+        >&"$write_fd"
+
+    while IFS= read -r -t 8 -u "$read_fd" response; do
+        [[ "$response" == *'"id":2,"result":'* ]] && break
+        response=""
+    done
+
+    exec {write_fd}>&-
+    exec {read_fd}<&-
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+
+    [[ "$response" == *'"id":2,"result":'* ]] || return 1
+
+    primary="${response#*\"primary\":}"
+    [[ "$primary" != "$response" ]] || return 1
+    primary="${primary%%,\"secondary\":*}"
+    secondary="${response#*\"secondary\":}"
+    [[ "$secondary" != "$response" ]] || return 1
+    secondary="${secondary%%,\"credits\":*}"
+
+    [[ "$primary" =~ \"usedPercent\":([0-9]+) ]] || return 1
+    primary_used="${BASH_REMATCH[1]}"
+    [[ "$primary" =~ \"windowDurationMins\":([0-9]+) ]] || return 1
+    primary_minutes="${BASH_REMATCH[1]}"
+    [[ "$secondary" =~ \"usedPercent\":([0-9]+) ]] || return 1
+    secondary_used="${BASH_REMATCH[1]}"
+    [[ "$secondary" =~ \"windowDurationMins\":([0-9]+) ]] || return 1
+    secondary_minutes="${BASH_REMATCH[1]}"
+
+    if (( primary_minutes == 300 )); then
+        five_hour="$((100 - primary_used))%"
+    elif (( primary_minutes == 10080 )); then
+        weekly="$((100 - primary_used))%"
+    fi
+    if (( secondary_minutes == 300 )); then
+        five_hour="$((100 - secondary_used))%"
+    elif (( secondary_minutes == 10080 )); then
+        weekly="$((100 - secondary_used))%"
+    fi
+
+    printf '%s %s\n' "$five_hour" "$weekly"
+}
+
 list_profiles() {
     if [[ ! -d "$profiles_root" ]]; then
         printf 'As contas ainda nao foram criadas.\n'
         return
     fi
 
-    local directory name state
+    local directory name state limits five_hour weekly
+    printf '%-7s %-13s %-8s %-8s\n' 'conta' 'status' '5h' 'semana'
     for name in {1..10}; do
         directory="$profiles_root/$name"
         [[ -d "$directory" ]] || continue
         profile="$name"
         profile_home="$directory"
         state="desconectado"
-        profile_is_logged_in && state="conectado"
-        printf '%-20s %s\n' "$name" "$state"
+        five_hour="--"
+        weekly="--"
+        if profile_is_logged_in; then
+            state="conectado"
+            if limits="$(profile_usage_limits "$directory")"; then
+                read -r five_hour weekly <<< "$limits"
+            else
+                five_hour="indisp."
+                weekly="indisp."
+            fi
+        fi
+        printf '%-7s %-13s %-8s %-8s\n' "$name" "$state" "$five_hour" "$weekly"
     done
 }
 

@@ -45,7 +45,7 @@ Você só precisará autenticar novamente se fizer logout ou switch, revogar a s
 | --- | --- |
 | `cax` | Faz logout da conta padrão e abre o navegador para outra conta |
 | `cax 1` … `cax 10` | Abre o Codex com a conta numerada |
-| `cax list` | Lista as dez contas e seus estados |
+| `cax list` / `cax ls` | Lista as dez contas, seus estados e os percentuais restantes dos limites de 5 horas e semanal |
 | `cax N login` | Autentica a conta `N` |
 | `cax N status` | Mostra se a conta `N` está conectada |
 | `cax N switch` | Faz logout e login somente na conta `N` |
@@ -57,6 +57,8 @@ Se o navegador insistir em usar a conta errada, faça login por código e abra o
 ```bash
 cax 2 login --device-auth
 ```
+
+Os limites exibidos por `cax list` são os mesmos consultados pelo `/status` do Codex. A consulta não envia uma mensagem nem consome o limite. Se o serviço estiver temporariamente inacessível, o CAX mostra `indisp.` sem considerar a conta desconectada.
 
 ## Como funciona
 
