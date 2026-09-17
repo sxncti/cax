@@ -44,6 +44,8 @@ Uso:
   cax NUMERO status          mostra se a conta esta conectada
   cax NUMERO switch          logout + login somente nessa conta
   cax list                   lista as contas e os limites restantes
+  cax auto "TAREFA"          executa com troca automatica de conta
+  cax auto resume UUID       continua uma sessao com troca automatica
 
 Exemplo simultaneo, em dois terminais:
   cax 1
@@ -346,6 +348,147 @@ list_profiles() {
     rmdir -- "$usage_dir"
 }
 
+select_auto_profile() {
+    local excluded="$1" directory name email five_hour weekly
+    local five_value week_value capacity score best_score=-1 best_result=""
+    local usage_dir
+    local -a usage_pids=()
+
+    [[ -d "$profiles_root" ]] || return 1
+    umask 077
+    usage_dir="$(mktemp -d "${TMPDIR:-/tmp}/cax-auto-select.XXXXXX")" || return 1
+
+    for name in {1..10}; do
+        [[ " $excluded " == *" $name "* ]] && continue
+        directory="$profiles_root/$name"
+        [[ -d "$directory" ]] || continue
+        profile="$name"
+        profile_home="$directory"
+        if profile_is_logged_in; then
+            profile_usage_limits "$directory" > "$usage_dir/$name" &
+            usage_pids[$name]=$!
+        fi
+    done
+
+    for name in {1..10}; do
+        [[ -n "${usage_pids[$name]:-}" ]] || continue
+        if wait "${usage_pids[$name]}" &&
+            read -r email five_hour _ _ weekly _ _ < "$usage_dir/$name"; then
+            if [[ "$five_hour" =~ ^([0-9]+)%$ ]]; then
+                five_value="${BASH_REMATCH[1]}"
+            else
+                continue
+            fi
+            if [[ "$weekly" =~ ^([0-9]+)%$ ]]; then
+                week_value="${BASH_REMATCH[1]}"
+            else
+                continue
+            fi
+            (( five_value > 0 && week_value > 0 )) || continue
+            if (( five_value < week_value )); then
+                capacity="$five_value"
+            else
+                capacity="$week_value"
+            fi
+            score=$((capacity * 10000 + five_value * 100 + week_value))
+            if (( score > best_score )); then
+                best_score="$score"
+                best_result="$name $email $five_hour $weekly"
+            fi
+        fi
+    done
+
+    rm -f -- "$usage_dir"/{1..10}
+    rmdir -- "$usage_dir"
+    [[ -n "$best_result" ]] || return 1
+    printf '%s\n' "$best_result"
+}
+
+auto_limit_error() {
+    local output_file="$1"
+    grep -Eqi '^ERROR: .*(out of credits|usage limit)' "$output_file"
+}
+
+auto_session_id() {
+    local output_file="$1" line
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^session[[:space:]]id:[[:space:]]([0-9a-fA-F-]{36})$ ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+            return 0
+        fi
+    done < "$output_file"
+    return 1
+}
+
+auto_mode() {
+    local session_id="" prompt selection selected email five_hour weekly
+    local used_profiles="" output_file status detected_id
+    local continuation_prompt='Continue a tarefa exatamente de onde parou. Verifique o estado atual dos arquivos antes de prosseguir.'
+
+    if [[ "${1:-}" == "resume" ]]; then
+        shift
+        session_id="${1:-}"
+        [[ "$session_id" =~ ^[0-9a-fA-F-]{36}$ ]] ||
+            fail "informe o UUID da sessao: cax auto resume UUID"
+        shift
+        if (( $# > 0 )); then
+            prompt="$*"
+        else
+            prompt="$continuation_prompt"
+        fi
+    else
+        (( $# > 0 )) || fail 'informe a tarefa: cax auto "sua tarefa"'
+        prompt="$*"
+    fi
+
+    while :; do
+        if ! selection="$(select_auto_profile "$used_profiles")"; then
+            printf 'Nenhuma outra conta conectada possui limite de 5h e semanal disponivel.\n' >&2
+            [[ -n "$session_id" ]] && printf 'Sessao preservada: %s\n' "$session_id" >&2
+            return 1
+        fi
+        read -r selected email five_hour weekly <<< "$selection"
+        profile="$selected"
+        prepare_profile
+        printf '\nCAX auto: conta %s (%s), 5h %s, semana %s.\n\n' \
+            "$profile" "$email" "$five_hour" "$weekly"
+
+        umask 077
+        output_file="$(mktemp "${TMPDIR:-/tmp}/cax-auto-run.XXXXXX")" ||
+            fail "nao foi possivel criar o arquivo temporario da execucao."
+
+        if [[ -n "$session_id" ]]; then
+            CODEX_HOME="$profile_home" CODEX_SQLITE_HOME="$shared_state_home" \
+                "$codex_command" -c "$credentials_override" exec \
+                --approve-for-me --skip-git-repo-check \
+                resume "$session_id" "$prompt" 2>&1 | tee "$output_file"
+        else
+            CODEX_HOME="$profile_home" CODEX_SQLITE_HOME="$shared_state_home" \
+                "$codex_command" -c "$credentials_override" exec \
+                --approve-for-me --skip-git-repo-check \
+                "$prompt" 2>&1 | tee "$output_file"
+        fi
+        status="${PIPESTATUS[0]}"
+
+        if detected_id="$(auto_session_id "$output_file")"; then
+            session_id="$detected_id"
+        fi
+
+        if (( status != 0 )) && auto_limit_error "$output_file"; then
+            rm -f -- "$output_file"
+            [[ -n "$session_id" ]] ||
+                fail "o limite acabou, mas o UUID da sessao nao foi identificado."
+            used_profiles+=" $profile"
+            printf '\nCAX auto: limite da conta %s esgotado; procurando outra conta...\n' "$profile"
+            prompt="$continuation_prompt"
+            continue
+        fi
+
+        rm -f -- "$output_file"
+        return "$status"
+    done
+}
+
 if (( $# == 0 )); then
     switch_default
     exit 0
@@ -359,6 +502,11 @@ case "$1" in
     list|ls)
         list_profiles
         exit 0
+        ;;
+    auto)
+        shift
+        auto_mode "$@"
+        exit $?
         ;;
 esac
 

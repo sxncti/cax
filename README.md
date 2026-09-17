@@ -72,6 +72,8 @@ Você só precisará autenticar novamente se fizer logout ou switch, revogar a s
 | `cax N switch` | Faz logout e login somente na conta `N` |
 | `cax N logout` | Desconecta somente a conta `N` |
 | `cax help` | Mostra a ajuda no terminal |
+| `cax auto "TAREFA"` | Executa uma tarefa autônoma e troca de conta se o limite acabar |
+| `cax auto resume UUID` | Continua uma sessão existente com troca automática de conta |
 
 Se o navegador insistir em usar a conta errada, faça login por código e abra o endereço mostrado em uma janela anônima:
 
@@ -82,6 +84,24 @@ cax 2 login --device-auth
 O `cax list` mostra a parte anterior ao `@` do e-mail associado a cada login do ChatGPT. Os limites são os mesmos consultados pelo `/status` do Codex, e cada percentual vem acompanhado de uma pilha visual com cinco segmentos e do tempo restante até o reset, como `70% [■■■■□] (2h14m)`. A consulta não envia uma mensagem nem consome o limite. Se o serviço estiver temporariamente inacessível, o CAX mostra `indisp.` sem considerar a conta desconectada.
 
 Em terminais compatíveis, o CAX colore somente a contagem regressiva para destacar a proximidade do reset. Defina `NO_COLOR=1` ou `CAX_COLOR=never` para desativar as cores; use `CAX_COLOR=always` para mantê-las mesmo quando a saída for redirecionada.
+
+## Continuação automática
+
+Para uma tarefa autônoma longa, use:
+
+```bash
+cax auto "implemente a tarefa, execute os testes e corrija eventuais falhas"
+```
+
+O CAX escolhe a conta conectada com a melhor combinação de limite de 5 horas e semanal. Se o Codex encerrar o turno por falta de limite, o CAX preserva o UUID da sessão, escolhe outra conta com limite e continua o mesmo trabalho automaticamente.
+
+Também é possível assumir uma sessão já existente:
+
+```bash
+cax auto resume 00000000-0000-0000-0000-000000000000
+```
+
+O modo `auto` usa a execução não interativa do Codex com sandbox `workspace-write` e revisão automática de aprovações. Ele troca de conta somente quando a saída informa esgotamento de créditos ou limite; outros erros são devolvidos normalmente. Use apenas contas que você está autorizado a acessar.
 
 ## Como funciona
 
