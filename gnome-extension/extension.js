@@ -66,9 +66,9 @@ const UsageRing = GObject.registerClass(class UsageRing extends St.Widget {
     }
 });
 
-class CaxIndicator extends PanelMenu.Button {
-    constructor() {
-        super(0.0, 'CAX 5h Rings');
+const CaxIndicator = GObject.registerClass(class CaxIndicator extends PanelMenu.Button {
+    _init() {
+        super._init(0.0, 'CAX 5h Rings');
         this._box = new St.BoxLayout({style_class: 'cax-rings-box'});
         this.add_child(this._box);
         this._refreshId = 0;
@@ -148,7 +148,7 @@ class CaxIndicator extends PanelMenu.Button {
         }
         super.destroy();
     }
-}
+});
 
 export default class CaxRingsExtension extends Extension {
     enable() {
