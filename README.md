@@ -26,7 +26,7 @@ No GNOME, ele também instala o indicador **CAX 5h Rings**. Após a primeira ins
 gnome-extensions enable cax-rings@sxncti.github.com
 ```
 
-Um ring para cada conta conectada aparece no lado direito da barra superior. O número no centro é o percentual restante das 5 horas: verde a partir de 50%, amarelo entre 20% e 49%, e vermelho abaixo de 20%. Quando ainda há limite de 5 horas, mas o limite semanal chegou a zero, o ring fica esmaecido para indicar que aquela conta está bloqueada. Os dados são atualizados a cada cinco minutos e também podem ser atualizados pelo menu do indicador.
+Um ring para cada conta conectada aparece no lado direito da barra superior. O número no centro é o percentual restante das 5 horas: verde a partir de 50%, amarelo entre 20% e 49%, e vermelho abaixo de 20%. Quando ainda há limite de 5 horas, mas o limite semanal chegou a zero, o ring fica esmaecido e monocromático, com arco cinza e número branco, para indicar que aquela conta está bloqueada. Os dados são atualizados a cada cinco minutos e também podem ser atualizados pelo menu do indicador.
 
 ## Atualização
 

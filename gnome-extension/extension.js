@@ -21,7 +21,7 @@ function ringColor(percent) {
 }
 
 const UsageRing = GObject.registerClass(class UsageRing extends St.Widget {
-    _init(percent) {
+    _init(percent, muted = false) {
         super._init({
             style_class: 'cax-ring',
             layout_manager: new Clutter.BinLayout(),
@@ -29,6 +29,7 @@ const UsageRing = GObject.registerClass(class UsageRing extends St.Widget {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._percent = Math.max(0, Math.min(100, percent));
+        this._muted = muted;
 
         this._canvas = new St.DrawingArea({x_expand: true, y_expand: true});
         this._canvas.connect('repaint', area => this._draw(area));
@@ -51,12 +52,17 @@ const UsageRing = GObject.registerClass(class UsageRing extends St.Widget {
 
         cr.setLineWidth(3);
         cr.setLineCap(Cairo.LineCap.ROUND);
-        cr.setSourceRGBA(1, 1, 1, 0.18);
+        if (this._muted)
+            cr.setSourceRGBA(0.25, 0.25, 0.25, 0.85);
+        else
+            cr.setSourceRGBA(1, 1, 1, 0.18);
         cr.arc(centerX, centerY, radius, 0, Math.PI * 2);
         cr.stroke();
 
         if (this._percent > 0) {
-            const [red, green, blue, alpha] = ringColor(this._percent);
+            const [red, green, blue, alpha] = this._muted
+                ? [0.78, 0.78, 0.78, 1]
+                : ringColor(this._percent);
             cr.setSourceRGBA(red, green, blue, alpha);
             cr.arc(centerX, centerY, radius, -Math.PI / 2,
                 -Math.PI / 2 + Math.PI * 2 * this._percent / 100);
@@ -132,10 +138,10 @@ const CaxIndicator = GObject.registerClass(class CaxIndicator extends PanelMenu.
                 error ?? 'Nenhuma conta conectada', {reactive: false}));
         } else {
             for (const account of accounts) {
-                const ring = new UsageRing(account.percent);
                 const weeklyExhausted = account.percent > 0 && account.weeklyPercent === 0;
+                const ring = new UsageRing(account.percent, weeklyExhausted);
                 if (weeklyExhausted)
-                    ring.opacity = 90;
+                    ring.opacity = 150;
                 ring.accessible_name = weeklyExhausted
                     ? `Conta ${account.number}: ${account.percent}% nas 5 horas, limite semanal esgotado`
                     : `Conta ${account.number}: ${account.percent}%`;
