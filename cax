@@ -351,7 +351,7 @@ list_profiles() {
 
 topbar_data() {
     local directory name email five_hour five_reset five_seconds
-    local weekly week_reset week_seconds usage_dir
+    local weekly week_reset week_seconds usage_dir five_value weekly_value
     local -a usage_pids=()
 
     [[ -d "$profiles_root" ]] || return 0
@@ -376,9 +376,14 @@ topbar_data() {
             read -r email five_hour five_reset five_seconds weekly week_reset week_seconds \
                 < "$usage_dir/$name" &&
             [[ "$five_hour" =~ ^([0-9]+)%$ ]]; then
-            # Formato estavel e sem cores: conta<TAB>email<TAB>percentual<TAB>reset.
-            printf '%s\t%s\t%s\t%s\n' \
-                "$name" "$email" "${BASH_REMATCH[1]}" "$five_reset"
+            five_value="${BASH_REMATCH[1]}"
+            weekly_value=-1
+            if [[ "$weekly" =~ ^([0-9]+)%$ ]]; then
+                weekly_value="${BASH_REMATCH[1]}"
+            fi
+            # Formato estavel: conta, email, 5h restante, reset de 5h e semana restante.
+            printf '%s\t%s\t%s\t%s\t%s\n' \
+                "$name" "$email" "$five_value" "$five_reset" "$weekly_value"
         fi
     done
 

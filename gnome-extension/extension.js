@@ -101,8 +101,14 @@ const CaxIndicator = GObject.registerClass(class CaxIndicator extends PanelMenu.
             try {
                 const [, stdout] = source.communicate_utf8_finish(result);
                 const accounts = stdout.trim().split('\n').filter(Boolean).map(line => {
-                    const [number, email, percent, reset] = line.split('\t');
-                    return {number, email, percent: Number(percent), reset};
+                    const [number, email, percent, reset, weeklyPercent] = line.split('\t');
+                    return {
+                        number,
+                        email,
+                        percent: Number(percent),
+                        reset,
+                        weeklyPercent: Number(weeklyPercent),
+                    };
                 }).filter(account => Number.isFinite(account.percent));
                 this._render(accounts, null);
             } catch (error) {
@@ -127,10 +133,19 @@ const CaxIndicator = GObject.registerClass(class CaxIndicator extends PanelMenu.
         } else {
             for (const account of accounts) {
                 const ring = new UsageRing(account.percent);
-                ring.accessible_name = `Conta ${account.number}: ${account.percent}%`;
+                const weeklyExhausted = account.percent > 0 && account.weeklyPercent === 0;
+                if (weeklyExhausted)
+                    ring.opacity = 90;
+                ring.accessible_name = weeklyExhausted
+                    ? `Conta ${account.number}: ${account.percent}% nas 5 horas, limite semanal esgotado`
+                    : `Conta ${account.number}: ${account.percent}%`;
                 this._box.add_child(ring);
+                const weeklyStatus = account.weeklyPercent >= 0
+                    ? `semana ${account.weeklyPercent}%`
+                    : 'semana indisponível';
+                const blockedStatus = weeklyExhausted ? ' · bloqueado' : '';
                 this.menu.addMenuItem(new PopupMenu.PopupMenuItem(
-                    `Conta ${account.number} · ${account.email} · ${account.percent}% · ${account.reset}`,
+                    `Conta ${account.number} · ${account.email} · 5h ${account.percent}% · ${weeklyStatus} · ${account.reset}${blockedStatus}`,
                     {reactive: false}));
             }
         }
