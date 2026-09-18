@@ -1,0 +1,20 @@
+.cax-rings-box {
+  spacing: 3px;
+}
+
+.cax-ring {
+  width: 28px;
+  height: 28px;
+}
+
+.cax-ring-label {
+  font-size: 8px;
+  font-weight: 700;
+  color: white;
+  text-align: center;
+}
+
+.cax-empty-label {
+  color: rgba(255, 255, 255, 0.65);
+  padding: 0 6px;
+}

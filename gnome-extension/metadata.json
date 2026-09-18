@@ -1,0 +1,8 @@
+{
+  "uuid": "cax-rings@sxncti.github.com",
+  "name": "CAX 5h Rings",
+  "description": "Mostra o limite restante de 5 horas das contas CAX na barra superior.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/sxncti/cax",
+  "version": 1
+}

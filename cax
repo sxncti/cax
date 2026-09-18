@@ -44,6 +44,7 @@ Uso:
   cax NUMERO status          mostra se a conta esta conectada
   cax NUMERO switch          logout + login somente nessa conta
   cax list                   lista as contas e os limites restantes
+  cax bar-data               fornece os limites para a extensao da topbar
   cax auto "TAREFA"          executa com troca automatica de conta
   cax auto resume UUID       continua uma sessao com troca automatica
 
@@ -348,6 +349,43 @@ list_profiles() {
     rmdir -- "$usage_dir"
 }
 
+topbar_data() {
+    local directory name email five_hour five_reset five_seconds
+    local weekly week_reset week_seconds usage_dir
+    local -a usage_pids=()
+
+    [[ -d "$profiles_root" ]] || return 0
+    umask 077
+    usage_dir="$(mktemp -d "${TMPDIR:-/tmp}/cax-bar.XXXXXX")" ||
+        fail "nao foi possivel criar o diretorio temporario da consulta."
+
+    for name in {1..10}; do
+        directory="$profiles_root/$name"
+        [[ -d "$directory" ]] || continue
+        profile="$name"
+        profile_home="$directory"
+        if profile_is_logged_in; then
+            profile_usage_limits "$directory" > "$usage_dir/$name" &
+            usage_pids[$name]=$!
+        fi
+    done
+
+    for name in {1..10}; do
+        [[ -n "${usage_pids[$name]:-}" ]] || continue
+        if wait "${usage_pids[$name]}" &&
+            read -r email five_hour five_reset five_seconds weekly week_reset week_seconds \
+                < "$usage_dir/$name" &&
+            [[ "$five_hour" =~ ^([0-9]+)%$ ]]; then
+            # Formato estavel e sem cores: conta<TAB>email<TAB>percentual<TAB>reset.
+            printf '%s\t%s\t%s\t%s\n' \
+                "$name" "$email" "${BASH_REMATCH[1]}" "$five_reset"
+        fi
+    done
+
+    rm -f -- "$usage_dir"/{1..10}
+    rmdir -- "$usage_dir"
+}
+
 select_auto_profile() {
     local excluded="$1" directory name email five_hour weekly
     local five_value week_value capacity score best_score=-1 best_result=""
@@ -501,6 +539,10 @@ case "$1" in
         ;;
     list|ls)
         list_profiles
+        exit 0
+        ;;
+    bar-data)
+        topbar_data
         exit 0
         ;;
     auto)

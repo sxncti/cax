@@ -20,6 +20,14 @@ cd cax
 
 O instalador coloca o comando em `~/.local/bin/cax`, adiciona o lançador **CAX — Trocar conta do Codex** ao menu de aplicativos e prepara os perfis `1` a `10`.
 
+No GNOME, ele também instala o indicador **CAX 5h Rings**. Após a primeira instalação, saia e entre novamente na sessão para o GNOME reconhecer a nova extensão; então ative-a uma vez com:
+
+```bash
+gnome-extensions enable cax-rings@sxncti.github.com
+```
+
+Um ring para cada conta conectada aparece no lado direito da barra superior. O número no centro é o percentual restante das 5 horas: verde a partir de 50%, amarelo entre 20% e 49%, e vermelho abaixo de 20%. Os dados são atualizados a cada cinco minutos e também podem ser atualizados pelo menu do indicador.
+
 ## Atualização
 
 Se você manteve a pasta clonada na instalação original, entre nela e rode:
@@ -67,6 +75,7 @@ Você só precisará autenticar novamente se fizer logout ou switch, revogar a s
 | `cax` | Faz logout da conta padrão e abre o navegador para outra conta |
 | `cax 1` … `cax 10` | Abre o Codex com a conta numerada |
 | `cax list` / `cax ls` | Lista as dez contas, seus e-mails, estados e os limites restantes de 5 horas e semanal |
+| `cax bar-data` | Saída estável usada pelo indicador da barra superior |
 | `cax N login` | Autentica a conta `N` |
 | `cax N status` | Mostra se a conta `N` está conectada |
 | `cax N switch` | Faz logout e login somente na conta `N` |
